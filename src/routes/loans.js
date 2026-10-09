@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { supabase } from '../db/supabaseClient.js';
-import { v4 as uuidv4 } from 'uuid';
+import crypto from 'crypto';
 
 const router = Router();
 
@@ -21,15 +21,18 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'member_id & book_id are required' });
   }
   const newLoan = {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     member_id,
     book_id,
     loan_date: loan_date ?? new Date().toISOString(),
     due_date,
     status: 'Ongoing',
   };
-  const { data, error } = await supabase.from('loans').insert(newLoan).single();
-  if (error) return res.status(500).json({ error: 'Failed to create loan' });
+  const { data, error } = await supabase.from('loans').insert(newLoan).select().single();
+  if (error) {
+    console.error('Supabase error:', error);
+    return res.status(500).json({ error: error.message || 'Failed to create loan' });
+  }
   res.status(201).json(mapLoan(data));
 });
 
@@ -41,7 +44,10 @@ router.get('/', async (req, res) => {
   if (member_id) query = query.eq('member_id', member_id);
   if (book_id) query = query.eq('book_id', book_id);
   const { data, error } = await query.order('loan_date', { ascending: false });
-  if (error) return res.status(500).json({ error: 'Failed to fetch loans' });
+  if (error) {
+    console.error('Supabase error:', error);
+    return res.status(500).json({ error: error.message || 'Failed to fetch loans' });
+  }
   res.json(data.map(mapLoan));
 });
 
@@ -52,7 +58,7 @@ router.get('/:id', async (req, res) => {
     .select('*')
     .eq('id', id)
     .single();
-  if (error) return res.status(404).json({ error: 'Loan not found' });
+  if (error || !data) return res.status(404).json({ error: 'Loan not found' });
   res.json(mapLoan(data));
 });
 
@@ -63,8 +69,12 @@ router.patch('/:id', async (req, res) => {
   const { data, error } = await supabase.from('loans')
     .update(updates)
     .eq('id', id)
+    .select()
     .single();
-  if (error) return res.status(400).json({ error: 'Failed to update loan' });
+  if (error || !data) {
+    console.error('Supabase error:', error);
+    return res.status(400).json({ error: error?.message || 'Failed to update loan' });
+  }
   res.json(mapLoan(data));
 });
 
@@ -72,8 +82,11 @@ router.patch('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   const { id } = req.params;
   const { error } = await supabase.from('loans').delete().eq('id', id);
-  if (error) return res.status(400).json({ error: 'Failed to delete loan' });
-  res.status(204).send();
+  if (error) {
+    console.error('Supabase error:', error);
+    return res.status(400).json({ error: error.message || 'Failed to delete loan' });
+  }
+  res.status(200).json({ message: 'Loan deleted successfully' });
 });
 
 export default router;
